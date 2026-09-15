@@ -126,7 +126,7 @@ def main():
 
         if not releaseData or not isinstance(releaseData, list):
             print("No releases or response isn't a list")
-            time.sleep(interval))
+            time.sleep(interval)
             continue
 
         repoData = repoResponse.json()
