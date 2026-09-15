@@ -6,23 +6,27 @@ import re
 import time
 
 
-repoLink = ""
-fromAddress = ""
-toAddress = ""
+#note, in the url you must add "api." before "github", and "/repos/" before the username
+repoLink = "https://api.github.com/repos/cvenclauskas/GH-Release-Bot"
+fromAddress = "fromemail@gmail.com"
+toAddress = "toemail@gmail.com"
 password = ""
-
-server = smt.SMTP("smtp.gmail.com", 587)
-server.starttls()
-
-server.login(fromAddress, password)
-
+#THIS IS AN APP PASSWORD, NOT YOUR EMAIL PASSWORD
 
 def createEmail(repoData, releaseData):
     
+    #server stuff
+    server = smt.SMTP("smtp.gmail.com", 587)
+    server.starttls()
+
+    server.login(fromAddress, password)
+
     body = releaseData["body"]
 
+    #removes some weird whitespace
     body = re.sub(r'(?m)^  ', '', body)
 
+    #prevents issue numbers from being displayed as urls
     body = re.sub(
         r'https://github\.com/[^/]+/[^/]+/(?:issues|pull)/(\d+)',
         r'[#\1](https://github.com/fmtlib/fmt/issues/\1)',
@@ -31,6 +35,7 @@ def createEmail(repoData, releaseData):
 
     changelog = markdown.markdown(body, extensions=["tables", "fenced_code"])
 
+    #html stuff for email
     message = MIMEText(f"""
     <html>
     <head>
@@ -79,8 +84,6 @@ def createEmail(repoData, releaseData):
 
     {changelog}
 
-    <br>
-
     <a href="{releaseData["html_url"]}">
     Check it out here
     </a>
@@ -93,28 +96,57 @@ def createEmail(repoData, releaseData):
     message["From"] = fromAddress
     message["To"] = toAddress
 
+    #sends email
     server.sendmail(fromAddress, toAddress, message.as_string())
     server.quit()
+    print("email sent to", toAddress)
 
 
-
+#once per minute check whether the latest release 
+#id matches the previous checks latest release id
+#if not then send an email
 def main():
-    previousRelease = None
 
+    interval = 30
+    
+    previousRelease = None
+    
     while True:
+
+
         repoResponse = req.get(repoLink)
-        releaseResponse = req.get(repoLink + "/releases/latest")
-        repoData = repoResponse.json()
+        releaseResponse = req.get(repoLink + "/releases")
+
+        #if error, sleep and try again in interval seconds
+        if releaseResponse.status_code == 404:
+            time.sleep(interval)
+            continue
+
         releaseData = releaseResponse.json()
 
-        latestRelease = releaseData["id"]
+        if not releaseData or not isinstance(releaseData, list):
+            print("No releases or response isn't a list")
+            time.sleep(interval))
+            continue
+
+        repoData = repoResponse.json()
+
+        latestRelease = releaseData[0]
+        latestReleaseId = latestRelease["id"]
+        
+        #if we are checking for the first time, assign latest release
         if previousRelease is None:
-            previousRelease = latestRelease
-        elif latestRelease != previousRelease:
-            createEmail(repoData, releaseData)
-            previousRelease = latestRelease
+            previousRelease = latestReleaseId
+            print("NEW RELEASE DETECTED:", latestRelease["name"])
+            createEmail(repoData, latestRelease)
+        #if new id, send email
+        elif latestReleaseId != previousRelease:
+            print("NEW RELEASE DETECTED:", latestRelease["name"])
+            createEmail(repoData, latestRelease)
+            previousRelease = latestReleaseId
+        
+        #sleeeeeeeeeeeeep
+        time.sleep(interval)
 
-        time.sleep(60)
-
-
-main()
+if __name__ == "__main__":
+    main()
